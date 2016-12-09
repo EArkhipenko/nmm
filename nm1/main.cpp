@@ -4,6 +4,8 @@
 #include <set>
 #include <algorithm>
 #include <functional>
+#include <random>
+#include <chrono>
 #include "Matrix.h"
 
 #define SEPS 1.e-8
@@ -36,15 +38,39 @@ void divide(std::vector<double> & v, double a, double b, double k, int n)
 	v[n - 1] = b;
 }
 
+void generate(const char * file, function<double(double)> f, double a, double b, int n, double sig = 0.1, double sigout = 1.0, double out = 0.3, double w = 1.0) {
+	vector<double> grid;
+	divide(grid, a, b, 1.0, n);
+	ofstream fout(file);
+	unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
+	default_random_engine generator(seed);
+	normal_distribution<double> normal_dist(0, sig);
+	normal_distribution<double> out_dist(0, sigout);
+	binomial_distribution<int> binom_dist(1, out);
+	auto normal = bind(normal_dist, generator);
+	auto binom  = bind(binom_dist, generator);
+	auto outlier = bind(out_dist, generator);
+	fout << grid.size() << endl;;
+	for (int i = 0; i < grid.size(); ++i) {
+		double x = grid[i];
+		double err = binom() ? outlier() : normal();
+		fout << x << "\t" << f(x) + err << "\t" << w << endl;
+	}
+}
+
+
 int main(int argc, char *argv[]) {
 
 	const char * file = "in.txt";
+	const char * filepoints = "points.txt";
 
 	if (argc > 2) {
 		file = argv[1];
 	}
 
-	ifstream fin(file);
+	//generate(filepoints, [](double x) {return sin(x); }, -3.5, 3.5, 10);
+
+	ifstream fin(filepoints);
 	vector<Point> points;
 
 	// Считываем точки
@@ -56,6 +82,9 @@ int main(int argc, char *argv[]) {
 		points.push_back(p);
 	}
 
+	fin.close();
+	fin.open(file);
+
 	double a, b, k; //a начало b конец k коэф разрядки 
 	int n;  // кол-во узлов
 	fin >> a >> b >> n >> k;
@@ -66,13 +95,13 @@ int main(int argc, char *argv[]) {
 	double beta;
 	fin >> beta;
 
+	double r;  // заданное кол-во раз
+	fin >> r;
 
 	// Начинаем решать
 
     // Распихиваем точки по отрезкам
 	sort(points.begin(), points.end(), [](const Point &a, const Point &b) { return a.x < b.x; });
-	//a = points[0].x - 0.1;
-	//b = points[N - 1].x + 0.1;
 	divide(grid, a, b, k, n);
 	vector<set<int>> points_by_grid(n-1);
 	int s = 0;
@@ -98,59 +127,13 @@ int main(int argc, char *argv[]) {
 
 	Matrix m;
 	m.build(n - 1, NUMDOF);
-	//m.build(n - 1, 2 * n, NUMDOF, getind);
-
+	vector<double> q(m.size());
 	vector<function<double(double)>> phi = {
 		[](double x) {return 1.0 - 3.0 * x * x + 2.0 * x * x * x; },
 		[](double x) {return x - 2.0 * x * x + x * x * x; },
 		[](double x) {return 3.0 * x * x - 2.0 * x * x * x; },
 		[](double x) {return -x * x + x * x * x; }
 	};
-
-	for (int e = 0; e < n - 1; ++e) {
-		int ind[4];
-		double matr[NUMDOF * NUMDOF];
-		double b[NUMDOF];
-		double h = grid[e + 1] - grid[e];
-		double x0 = grid[e];
-		auto ksi = [phi, h, x0](int i, double x) { return (i % 2 == 0 ? 1.0 : h) * phi[i]((x - x0) / h); };
-
-		getind(e, ind);
-		for (int i = 0; i < NUMDOF; ++i) {
-			for (int j = 0; j < NUMDOF; ++j) {
-				matr[i*NUMDOF + j] = 0;
-				for (auto & k : points_by_grid[e]) {
-					auto & p = points[k];
-					matr[i*NUMDOF + j] += p.w * ksi(i, p.x) * ksi(j, p.x);
-				}
-			}
-			b[i] = 0;
-			for (auto & k : points_by_grid[e]) {
-				auto & p = points[k];
-				b[i] += p.w * ksi(i, p.x) * p.f;
-			}
-		}
-		m.add(1.0, matr, ind, NUMDOF);
-
-		matr[0] = matr[10] = 12.0 / h / h / h;
-		matr[1] = matr[3] = matr[4] = matr[12] = 6.0 / h / h;
-		matr[2] = matr[8] = -matr[0];
-		matr[5] = matr[15] = 4.0 / h;
-		matr[6] = matr[9] = matr[11] = matr[14] = -matr[1];
-		matr[7] = matr[13] = 2.0 / h;
- 		
-		m.add(beta, matr, ind, NUMDOF);
-		m.add_f(1.0, b, ind, NUMDOF);
-	}
-
-	//m.LLt();
-	//m.print();
-	//for (int i = 0; i < m.size(); ++i) {
-	//	for (int j = 0; j < m.size(); ++j) cout << m.element(i, j) << " ";  cout << "| " << m.rp(i);  cout << endl;
-	//}
-
-	double * q = new double[m.size()];
-	m.solve(q);
 
 	auto p = [&](double x) {
 		int s = 0;
@@ -171,10 +154,80 @@ int main(int argc, char *argv[]) {
 		return res;
 	};
 
-	//for (int i = 0; i < m.size(); ++i) {
-	//	cout << q[i] << " ";
-	//}
-	//cout << endl;
+	vector<double> err(N);
+	for (int it = 0; it< 200; ++it) { // цикл по фильтрации
+		m.clean();
+		for (int e = 0; e < n - 1; ++e) {
+			int ind[4];
+			double matr[NUMDOF * NUMDOF];
+			double b[NUMDOF];
+			double h = grid[e + 1] - grid[e];
+			double x0 = grid[e];
+			auto ksi = [phi, h, x0](int i, double x) { return (i % 2 == 0 ? 1.0 : h) * phi[i]((x - x0) / h); };
+
+			getind(e, ind);
+			for (int i = 0; i < NUMDOF; ++i) {
+				for (int j = 0; j < NUMDOF; ++j) {
+					matr[i*NUMDOF + j] = 0;
+					for (auto & k : points_by_grid[e]) {
+						auto & p = points[k];
+						matr[i*NUMDOF + j] += p.w * ksi(i, p.x) * ksi(j, p.x);
+					}
+				}
+				b[i] = 0;
+				for (auto & k : points_by_grid[e]) {
+					auto & p = points[k];
+					b[i] += p.w * ksi(i, p.x) * p.f;
+				}
+			}
+			m.add(1.0, matr, ind, NUMDOF);
+
+			matr[0] = matr[10] = 12.0 / h / h / h;
+			matr[1] = matr[3] = matr[4] = matr[12] = 6.0 / h / h;
+			matr[2] = matr[8] = -matr[0];
+			matr[5] = matr[15] = 4.0 / h;
+			matr[6] = matr[9] = matr[11] = matr[14] = -matr[1];
+			matr[7] = matr[13] = 2.0 / h;
+
+			m.add(beta, matr, ind, NUMDOF);
+			m.add_f(1.0, b, ind, NUMDOF);
+		}
+		m.solve(q);
+
+		double mean = 0;
+		double max = 0;
+		
+
+		for (int i = 0; i < N; ++i) {
+			auto & point = points[i];
+			err[i] = fabs(p(point.x) - point.f);
+			if (err[i] > max) { max = err[i]; }
+			mean += err[i];
+		}
+		mean /= N;
+
+		cout << "it = " << it << "\tmean = " << mean << "\tmax = " << max << endl;
+
+		bool changed = false;
+		for (int i = 0; i < N; ++i) {
+			auto & point = points[i];
+			if (err[i] > mean * r) {
+				point.w *= 1.05;
+				cout << "err[" << i << "] = " << err[i] << " > mean = " << mean << " in " << err[i] / mean << " times. w[" << i << "] set to " << point.w << endl;
+				changed = true;
+			}
+			if (point.w < 1.e-6) {
+				cerr << "w[" << i << "] = " << point.w << " is too small. Exit." << endl;
+				changed = false;
+				break;
+			}
+		}
+		if (!changed) {
+			break;
+		}
+	}
+
+
 
 	ofstream fout("out.txt");
 	for (double x = a; x < b; x += 0.1) {
@@ -182,6 +235,5 @@ int main(int argc, char *argv[]) {
 	}
 
 	cout << "done" << endl;
-	delete[] q;
 	return 0;
 }

@@ -16,7 +16,7 @@ class Matrix
 	real * di;
 	real * al;
 
-	real * f;
+	vector<real> f;
 
 	int n; // Размерность
 	int m; // Кол-во элементов (размер al)
@@ -37,7 +37,7 @@ public:
 	void build(int kol, int koldof) {
 		n = (kol + 1) * koldof / 2;
 		di = new real[n];
-		f  = new real[n];
+		f.resize(n);
 		ia = new int[n + 1];
 		ia[0] = ia[1] = 0;
 		for (int i = 2; i <= n; ++i) {
@@ -46,6 +46,15 @@ public:
 		
 		m = ia[n];
 		al = new real[m];
+		for (int i = 0; i < n; ++i) {
+			f[i] = di[i] = 0;
+		}
+		for (int i = 0; i < m; ++i) {
+			al[i] = 0;
+		}
+	}
+
+	void clean() {
 		for (int i = 0; i < n; ++i) {
 			f[i] = di[i] = 0;
 		}
@@ -187,7 +196,7 @@ public:
 		}
 	}
 
-	void pryamoi_hod(real * f, real * x) {
+	void pryamoi_hod(const vector<real> & f, vector<real> & x) {
 		for (int i = 0; i < n; ++i) {
 			real2 s = 0;
 			int ia0 = ia[i];
@@ -203,7 +212,7 @@ public:
 		}
 	}
 
-	void obratniy_hod(real * f, real * x) {
+	void obratniy_hod(vector<real> & f, vector<real> & x) {
 		for (int j = n-1; j >= 0; j--) {
 			if (di[j] < EPS) {
 				printf("di[%d] = %f < EPS\n", j, di[j]);
@@ -217,12 +226,11 @@ public:
 		}
 	}
 
-	void solve(real * x) {
-		real * z = new real[size()];
+	void solve(vector<real> & x) {
+		vector<real> z(size());
 		LLt();
 		pryamoi_hod(f, z);
 		obratniy_hod(z, x);
-		delete[] z;
 	}
 };
 
