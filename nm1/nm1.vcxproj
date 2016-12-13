@@ -152,6 +152,7 @@
     <ClInclude Include="Matrix.h" />
   </ItemGroup>
   <ItemGroup>
+    <Text Include="clean.txt" />
     <Text Include="in.txt" />
     <Text Include="out.txt" />
     <Text Include="points.txt" />

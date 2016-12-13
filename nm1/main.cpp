@@ -42,6 +42,7 @@ void generate(const char * file, function<double(double)> f, double a, double b,
 	vector<double> grid;
 	divide(grid, a, b, 1.0, n);
 	ofstream fout(file);
+	ofstream fclean("clean.txt");
 	unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
 	default_random_engine generator(seed);
 	normal_distribution<double> normal_dist(0, sig);
@@ -50,11 +51,13 @@ void generate(const char * file, function<double(double)> f, double a, double b,
 	auto normal = bind(normal_dist, generator);
 	auto binom  = bind(binom_dist, generator);
 	auto outlier = bind(out_dist, generator);
-	fout << grid.size() << endl;;
+	fout << grid.size() << endl;
+	fclean << grid.size() << endl;
 	for (int i = 0; i < grid.size(); ++i) {
 		double x = grid[i];
 		double err = binom() ? outlier() : normal();
 		fout << x << "\t" << f(x) + err << "\t" << w << endl;
+		fclean << x << "\t" << f(x) << "\t" << w << endl;
 	}
 }
 
@@ -63,12 +66,13 @@ int main(int argc, char *argv[]) {
 
 	const char * file = "in.txt";
 	const char * filepoints = "points.txt";
+	//const char * filepoints = "clean.txt";
 
 	if (argc > 2) {
 		file = argv[1];
 	}
 
-	//generate(filepoints, [](double x) {return sin(x); }, -3.5, 3.5, 10);
+	//generate(filepoints, [](double x) {return sin(x); }, -3.5, 3.5, 15);
 
 	ifstream fin(filepoints);
 	vector<Point> points;
@@ -87,7 +91,7 @@ int main(int argc, char *argv[]) {
 
 	double a, b, k; //a начало b конец k коэф разрядки 
 	int n;  // кол-во узлов
-	fin >> a >> b >> n >> k;
+	fin >> n >> k;
 
 	vector<double> grid;
 	
@@ -102,6 +106,10 @@ int main(int argc, char *argv[]) {
 
     // Распихиваем точки по отрезкам
 	sort(points.begin(), points.end(), [](const Point &a, const Point &b) { return a.x < b.x; });
+	double h = points.back().x - points.front().x;
+	double out = 0.05;
+	a = points.front().x - h * out;
+	b = points.back().x + h * out;
 	divide(grid, a, b, k, n);
 	vector<set<int>> points_by_grid(n-1);
 	int s = 0;
@@ -206,7 +214,7 @@ int main(int argc, char *argv[]) {
 		}
 		mean /= N;
 
-		cout << "it = " << it << "\tmean = " << mean << "\tmax = " << max << endl;
+		cout << "it = " << it << "\tmean = " << mean << "\tmax = " << max << "\tratio = " << max / mean << endl;
 
 		bool changed = false;
 		for (int i = 0; i < N; ++i) {
@@ -215,11 +223,6 @@ int main(int argc, char *argv[]) {
 				point.w *= 1.05;
 				cout << "err[" << i << "] = " << err[i] << " > mean = " << mean << " in " << err[i] / mean << " times. w[" << i << "] set to " << point.w << endl;
 				changed = true;
-			}
-			if (point.w < 1.e-6) {
-				cerr << "w[" << i << "] = " << point.w << " is too small. Exit." << endl;
-				changed = false;
-				break;
 			}
 		}
 		if (!changed) {
@@ -230,8 +233,8 @@ int main(int argc, char *argv[]) {
 
 
 	ofstream fout("out.txt");
-	for (double x = a; x < b; x += 0.1) {
-		fout << x << "\t\t\t" << p(x) << endl;
+	for (double x = a; x <= b; x += 0.1) {
+		fout << x << "\t" << p(x) << endl;
 	}
 
 	cout << "done" << endl;
